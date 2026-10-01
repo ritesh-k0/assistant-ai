@@ -1,0 +1,6 @@
+{
+  "name": "Ritesh's Assistant",
+  "description": "Lakshmi • Personal AI Assistant for Ritesh Kumar supporting Hindi, English, Hinglish, voice interactions, routine, reminders, tasks, calendar, telephony & contacts, and social media management.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
