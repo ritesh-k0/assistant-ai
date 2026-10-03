@@ -20,7 +20,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useAssistant } from '../context/AssistantContext';
-import { dbService } from '../services/db';
+import { dbService, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_PUBLISHABLE_KEY } from '../services/db';
 import { apiService } from '../services/api';
 import { supabaseService } from '../services/supabaseService';
 
@@ -44,10 +44,10 @@ export const SettingsView: React.FC = () => {
 
   // Supabase form state
   const [supabaseUrl, setSupabaseUrl] = useState(
-    settings.supabaseConfig.url || 'https://jxnvwmtnoidceovaelsb.supabase.co'
+    settings.supabaseConfig.url || DEFAULT_SUPABASE_URL
   );
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(
-    settings.supabaseConfig.anonKey || 'sb_publishable_MK4bTSrWsCx1GV9HzEEKIA__E-zFzJ8'
+    settings.supabaseConfig.anonKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY
   );
   const [supabaseStatusMsg, setSupabaseStatusMsg] = useState<string | null>(null);
   const [isTestingSupabase, setIsTestingSupabase] = useState(false);
@@ -149,8 +149,8 @@ export const SettingsView: React.FC = () => {
 
   // Test Supabase connection
   const handleTestSupabase = async () => {
-    const url = (supabaseUrl || 'https://jxnvwmtnoidceovaelsb.supabase.co').trim();
-    const key = (supabaseAnonKey || 'sb_publishable_MK4bTSrWsCx1GV9HzEEKIA__E-zFzJ8').trim();
+    const url = (supabaseUrl || DEFAULT_SUPABASE_URL).trim();
+    const key = (supabaseAnonKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY).trim();
 
     if (!url || !key) {
       setSupabaseStatusMsg('Please enter both Supabase URL and Publishable Key.');
@@ -704,8 +704,8 @@ export const SettingsView: React.FC = () => {
                 type="button"
                 disabled={isSyncingWithSupabase}
                 onClick={async () => {
-                  const url = (supabaseUrl || 'https://jxnvwmtnoidceovaelsb.supabase.co').trim();
-                  const key = (supabaseAnonKey || 'sb_publishable_MK4bTSrWsCx1GV9HzEEKIA__E-zFzJ8').trim();
+                  const url = (supabaseUrl || DEFAULT_SUPABASE_URL).trim();
+                  const key = (supabaseAnonKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY).trim();
 
                   updateSettings({
                     supabaseConfig: {

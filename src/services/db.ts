@@ -24,9 +24,9 @@ const STORAGE_KEYS = {
   SETTINGS: 'ritesh_assistant_settings_v1',
 };
 
-export const DEFAULT_SUPABASE_PROJECT_ID = 'jxnvwmtnoidceovaelsb';
-export const DEFAULT_SUPABASE_URL = 'https://jxnvwmtnoidceovaelsb.supabase.co';
-export const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_MK4bTSrWsCx1GV9HzEEKIA__E-zFzJ8';
+export const DEFAULT_SUPABASE_PROJECT_ID = 'fupgnszofujkaslbawgq';
+export const DEFAULT_SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://fupgnszofujkaslbawgq.supabase.co';
+export const DEFAULT_SUPABASE_PUBLISHABLE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_MK4bTSrWsCx1GV9HzEEKIA__E-zFzJ8';
 
 // Initial realistic seed data for Ritesh Kumar
 export const DEFAULT_SETTINGS: AssistantSettings = {
@@ -532,10 +532,10 @@ export const dbService = {
   // Generates Supabase SQL schema with Row-Level Security and Safe Migration
   getSupabaseSQLSchema: (): string => {
     return `-- =========================================================================
--- LAKSHMI ASSISTANT - FINAL STRICT RLS DATABASE MIGRATION SCRIPT
--- Project ID: jxnvwmtnoidceovaelsb
--- User Email: riteshkumarrai313@gmail.com
--- Security Model: Strict auth.uid()::text Ownership (Zero Email Bypasses)
+-- LAKSHMI ASSISTANT - FINAL STRICT UUID RLS MIGRATION SCRIPT
+-- Supabase Project: fupgnszofujkaslbawgq
+-- User: riteshkumarrai313@gmail.com (UID: 19df4d16-0c84-4291-8303-dc6aba0f8b00)
+-- Type Specification: user_id is UUID everywhere with default auth.uid()
 -- =========================================================================
 
 -- Enable required PostgreSQL extensions
@@ -543,7 +543,7 @@ create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
 -- =========================================================================
--- STEP 1: CREATE TABLES IF NOT EXIST (Using TEXT user_id for zero-loss compatibility)
+-- STEP 1: TABLES AND STRUCTURE (user_id uuid default auth.uid())
 -- =========================================================================
 
 -- 0. USER PROFILES TABLE (Linked directly to Supabase auth.users)
@@ -560,7 +560,7 @@ create table if not exists public.profiles (
 -- 1. TASKS TABLE
 create table if not exists public.tasks (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   title text not null,
   description text,
   category text default 'Coding',
@@ -576,7 +576,7 @@ create table if not exists public.tasks (
 -- 2. REMINDERS TABLE
 create table if not exists public.reminders (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   title text not null,
   description text,
   date text not null,
@@ -591,7 +591,7 @@ create table if not exists public.reminders (
 -- 3. DAILY ROUTINE TABLE
 create table if not exists public.routine_items (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   period text not null,
   title text not null,
   start_time text not null,
@@ -607,7 +607,7 @@ create table if not exists public.routine_items (
 -- 4. PERSONAL MEMORIES TABLE
 create table if not exists public.memories (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   content text not null,
   category text default 'General',
   importance text default 'normal',
@@ -618,7 +618,7 @@ create table if not exists public.memories (
 -- 5. IMPORTANT CONTACTS TABLE
 create table if not exists public.contacts (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   name text not null,
   relation text,
   phone_number text not null,
@@ -634,7 +634,7 @@ create table if not exists public.contacts (
 -- 6. CALL HISTORY TABLE
 create table if not exists public.call_history (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   contact_name text not null,
   phone_number text not null,
   timestamp text not null,
@@ -649,7 +649,7 @@ create table if not exists public.call_history (
 -- 7. CALL MESSAGES TABLE
 create table if not exists public.call_messages (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   caller_name text not null,
   phone_number text not null,
   timestamp text not null,
@@ -662,7 +662,7 @@ create table if not exists public.call_messages (
 -- 8. SOCIAL MEDIA DRAFTS TABLE
 create table if not exists public.social_drafts (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   platform text not null,
   topic text not null,
   content text not null,
@@ -677,7 +677,7 @@ create table if not exists public.social_drafts (
 -- 9. CHAT HISTORY TABLE
 create table if not exists public.chat_history (
   id text primary key,
-  user_id text default (auth.uid())::text not null,
+  user_id uuid default auth.uid() not null,
   sender text not null,
   text text not null,
   action_taken jsonb,
@@ -686,44 +686,50 @@ create table if not exists public.chat_history (
 );
 
 -- =========================================================================
--- STEP 2: MIGRATE EXISTING 'ritesh_primary' RECORDS TO ACTUAL SUPABASE AUTH UID
+-- STEP 2: ENSURE COLUMN DEFAULTS USE PURE UUID (default auth.uid())
+-- =========================================================================
+
+alter table public.tasks alter column user_id set default auth.uid();
+alter table public.reminders alter column user_id set default auth.uid();
+alter table public.routine_items alter column user_id set default auth.uid();
+alter table public.memories alter column user_id set default auth.uid();
+alter table public.contacts alter column user_id set default auth.uid();
+alter table public.call_history alter column user_id set default auth.uid();
+alter table public.call_messages alter column user_id set default auth.uid();
+alter table public.social_drafts alter column user_id set default auth.uid();
+alter table public.chat_history alter column user_id set default auth.uid();
+
+-- =========================================================================
+-- STEP 3: MIGRATE OR BACKFILL UNASSIGNED RECORDS TO RITESH'S UID
+-- User UID: 19df4d16-0c84-4291-8303-dc6aba0f8b00
 -- =========================================================================
 
 do $$
 declare
-  v_uid text;
+  v_uid uuid;
 begin
-  select id::text into v_uid from auth.users where email = 'riteshkumarrai313@gmail.com' limit 1;
-  
-  if v_uid is not null then
-    update public.tasks set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.reminders set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.routine_items set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.memories set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.contacts set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.call_history set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.call_messages set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.social_drafts set user_id = v_uid where user_id = 'ritesh_primary';
-    update public.chat_history set user_id = v_uid where user_id = 'ritesh_primary';
-    raise notice 'Successfully migrated existing records to Supabase Auth UID: %', v_uid;
-  else
-    raise notice 'No user account found in auth.users for riteshkumarrai313@gmail.com. Please sign up or sign in to Supabase Auth first, then run this migration script.';
+  -- Resolve UID for riteshkumarrai313@gmail.com
+  select id into v_uid from auth.users where email = 'riteshkumarrai313@gmail.com' limit 1;
+  if v_uid is null then
+    v_uid := '19df4d16-0c84-4291-8303-dc6aba0f8b00'::uuid;
   end if;
+
+  -- Backfill any rows where user_id is null
+  update public.tasks set user_id = v_uid where user_id is null;
+  update public.reminders set user_id = v_uid where user_id is null;
+  update public.routine_items set user_id = v_uid where user_id is null;
+  update public.memories set user_id = v_uid where user_id is null;
+  update public.contacts set user_id = v_uid where user_id is null;
+  update public.call_history set user_id = v_uid where user_id is null;
+  update public.call_messages set user_id = v_uid where user_id is null;
+  update public.social_drafts set user_id = v_uid where user_id is null;
+  update public.chat_history set user_id = v_uid where user_id is null;
+  
+  raise notice 'Verified and migrated unassigned records to UID: %', v_uid;
 end $$;
 
--- Set default user_id to active authenticated user UID
-alter table public.tasks alter column user_id set default (auth.uid())::text;
-alter table public.reminders alter column user_id set default (auth.uid())::text;
-alter table public.routine_items alter column user_id set default (auth.uid())::text;
-alter table public.memories alter column user_id set default (auth.uid())::text;
-alter table public.contacts alter column user_id set default (auth.uid())::text;
-alter table public.call_history alter column user_id set default (auth.uid())::text;
-alter table public.call_messages alter column user_id set default (auth.uid())::text;
-alter table public.social_drafts alter column user_id set default (auth.uid())::text;
-alter table public.chat_history alter column user_id set default (auth.uid())::text;
-
 -- =========================================================================
--- STEP 3: PERFORMANCE INDEXES
+-- STEP 4: INDEXES FOR PERFORMANCE
 -- =========================================================================
 
 create index if not exists idx_tasks_user_id on public.tasks (user_id);
@@ -756,10 +762,8 @@ create index if not exists idx_chat_history_user_id on public.chat_history (user
 create index if not exists idx_chat_history_created on public.chat_history (created_at);
 
 -- =========================================================================
--- STEP 4: STRICT ROW-LEVEL SECURITY (RLS) POLICIES
--- Zero "USING (true)" wildcards.
--- Strict auth.uid()::text ownership enforcement across all operations.
--- Prevents cross-user insertions, updates, reads, or deletions.
+-- STEP 5: STRICT ROW-LEVEL SECURITY (RLS) POLICIES
+-- Zero wildcards. Uses user_id = auth.uid() directly with UUID typing.
 -- =========================================================================
 
 -- PROFILES
@@ -781,23 +785,23 @@ drop policy if exists "tasks_all_policy" on public.tasks;
 drop policy if exists "tasks_select_own" on public.tasks;
 create policy "tasks_select_own" on public.tasks
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "tasks_insert_own" on public.tasks;
 create policy "tasks_insert_own" on public.tasks
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "tasks_update_own" on public.tasks;
 create policy "tasks_update_own" on public.tasks
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "tasks_delete_own" on public.tasks;
 create policy "tasks_delete_own" on public.tasks
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- REMINDERS
 alter table public.reminders enable row level security;
@@ -805,23 +809,23 @@ drop policy if exists "reminders_all_policy" on public.reminders;
 drop policy if exists "reminders_select_own" on public.reminders;
 create policy "reminders_select_own" on public.reminders
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "reminders_insert_own" on public.reminders;
 create policy "reminders_insert_own" on public.reminders
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "reminders_update_own" on public.reminders;
 create policy "reminders_update_own" on public.reminders
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "reminders_delete_own" on public.reminders;
 create policy "reminders_delete_own" on public.reminders
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- ROUTINE
 alter table public.routine_items enable row level security;
@@ -829,23 +833,23 @@ drop policy if exists "routine_all_policy" on public.routine_items;
 drop policy if exists "routine_select_own" on public.routine_items;
 create policy "routine_select_own" on public.routine_items
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "routine_insert_own" on public.routine_items;
 create policy "routine_insert_own" on public.routine_items
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "routine_update_own" on public.routine_items;
 create policy "routine_update_own" on public.routine_items
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "routine_delete_own" on public.routine_items;
 create policy "routine_delete_own" on public.routine_items
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- MEMORIES
 alter table public.memories enable row level security;
@@ -853,23 +857,23 @@ drop policy if exists "memories_all_policy" on public.memories;
 drop policy if exists "memories_select_own" on public.memories;
 create policy "memories_select_own" on public.memories
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "memories_insert_own" on public.memories;
 create policy "memories_insert_own" on public.memories
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "memories_update_own" on public.memories;
 create policy "memories_update_own" on public.memories
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "memories_delete_own" on public.memories;
 create policy "memories_delete_own" on public.memories
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- CONTACTS
 alter table public.contacts enable row level security;
@@ -877,23 +881,23 @@ drop policy if exists "contacts_all_policy" on public.contacts;
 drop policy if exists "contacts_select_own" on public.contacts;
 create policy "contacts_select_own" on public.contacts
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "contacts_insert_own" on public.contacts;
 create policy "contacts_insert_own" on public.contacts
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "contacts_update_own" on public.contacts;
 create policy "contacts_update_own" on public.contacts
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "contacts_delete_own" on public.contacts;
 create policy "contacts_delete_own" on public.contacts
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- CALL HISTORY
 alter table public.call_history enable row level security;
@@ -901,23 +905,23 @@ drop policy if exists "call_history_all_policy" on public.call_history;
 drop policy if exists "call_history_select_own" on public.call_history;
 create policy "call_history_select_own" on public.call_history
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "call_history_insert_own" on public.call_history;
 create policy "call_history_insert_own" on public.call_history
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "call_history_update_own" on public.call_history;
 create policy "call_history_update_own" on public.call_history
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "call_history_delete_own" on public.call_history;
 create policy "call_history_delete_own" on public.call_history
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- CALL MESSAGES
 alter table public.call_messages enable row level security;
@@ -925,23 +929,23 @@ drop policy if exists "call_messages_all_policy" on public.call_messages;
 drop policy if exists "call_messages_select_own" on public.call_messages;
 create policy "call_messages_select_own" on public.call_messages
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "call_messages_insert_own" on public.call_messages;
 create policy "call_messages_insert_own" on public.call_messages
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "call_messages_update_own" on public.call_messages;
 create policy "call_messages_update_own" on public.call_messages
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "call_messages_delete_own" on public.call_messages;
 create policy "call_messages_delete_own" on public.call_messages
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- SOCIAL DRAFTS
 alter table public.social_drafts enable row level security;
@@ -949,23 +953,23 @@ drop policy if exists "social_drafts_all_policy" on public.social_drafts;
 drop policy if exists "social_drafts_select_own" on public.social_drafts;
 create policy "social_drafts_select_own" on public.social_drafts
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "social_drafts_insert_own" on public.social_drafts;
 create policy "social_drafts_insert_own" on public.social_drafts
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "social_drafts_update_own" on public.social_drafts;
 create policy "social_drafts_update_own" on public.social_drafts
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "social_drafts_delete_own" on public.social_drafts;
 create policy "social_drafts_delete_own" on public.social_drafts
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- CHAT HISTORY
 alter table public.chat_history enable row level security;
@@ -973,26 +977,26 @@ drop policy if exists "chat_history_all_policy" on public.chat_history;
 drop policy if exists "chat_history_select_own" on public.chat_history;
 create policy "chat_history_select_own" on public.chat_history
   for select to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 drop policy if exists "chat_history_insert_own" on public.chat_history;
 create policy "chat_history_insert_own" on public.chat_history
   for insert to authenticated
-  with check (user_id = (auth.uid())::text);
+  with check (user_id = auth.uid());
 
 drop policy if exists "chat_history_update_own" on public.chat_history;
 create policy "chat_history_update_own" on public.chat_history
   for update to authenticated
-  using (user_id = (auth.uid())::text)
-  with check (user_id = (auth.uid())::text);
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 drop policy if exists "chat_history_delete_own" on public.chat_history;
 create policy "chat_history_delete_own" on public.chat_history
   for delete to authenticated
-  using (user_id = (auth.uid())::text);
+  using (user_id = auth.uid());
 
 -- =========================================================================
--- STEP 5: AUTH TRIGGER & INITIALIZATION
+-- STEP 6: AUTH TRIGGER & AUTO-PROVISIONING
 -- =========================================================================
 
 create or replace function public.handle_new_user()

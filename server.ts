@@ -333,10 +333,8 @@ app.post('/api/telephony/forward', (req, res) => {
 });
 
 // Default Supabase project configuration
-const DEFAULT_SUPABASE_PROJECT_ID = 'jxnvwmtnoidceovaelsb';
-const DEFAULT_SUPABASE_URL = process.env.SUPABASE_URL?.includes('jxnvwmtnoidceovaelsb')
-  ? process.env.SUPABASE_URL
-  : 'https://jxnvwmtnoidceovaelsb.supabase.co';
+const DEFAULT_SUPABASE_PROJECT_ID = 'fupgnszofujkaslbawgq';
+const DEFAULT_SUPABASE_URL = process.env.SUPABASE_URL || 'https://fupgnszofujkaslbawgq.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_MK4bTSrWsCx1GV9HzEEKIA__E-zFzJ8';
 
 // API: Test Supabase connection (GET and POST supported)
