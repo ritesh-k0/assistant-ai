@@ -91,6 +91,8 @@ export interface ImportantContact {
   isSpecialRule?: boolean; // For Papa special rule
 }
 
+export type Contact = ImportantContact;
+
 export interface CallRecord {
   id: string;
   contactName: string;

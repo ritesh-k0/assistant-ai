@@ -87,11 +87,13 @@ export const IncomingCallModal: React.FC = () => {
             {isPapa ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-sm font-bold mb-2">
                 <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
-                <span>❤️ Papa is calling</span>
+                <span>❤️ {activeCall.contactName} is calling</span>
               </div>
             ) : (
               <div className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">
-                {activeCall.relation || 'Incoming Caller'}
+                {activeCall.relation && activeCall.relation !== 'Unknown'
+                  ? activeCall.relation
+                  : 'Incoming Caller'}
               </div>
             )}
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">

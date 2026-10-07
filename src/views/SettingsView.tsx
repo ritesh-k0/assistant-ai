@@ -44,10 +44,12 @@ export const SettingsView: React.FC = () => {
 
   // Supabase form state
   const [supabaseUrl, setSupabaseUrl] = useState(
-    settings.supabaseConfig.url || DEFAULT_SUPABASE_URL
+    DEFAULT_SUPABASE_URL
   );
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(
-    settings.supabaseConfig.anonKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY
+    (settings.supabaseConfig?.anonKey && !settings.supabaseConfig.anonKey.includes('MK4bTSrWsCx1GV9HzEEKIA'))
+      ? settings.supabaseConfig.anonKey
+      : DEFAULT_SUPABASE_PUBLISHABLE_KEY
   );
   const [supabaseStatusMsg, setSupabaseStatusMsg] = useState<string | null>(null);
   const [isTestingSupabase, setIsTestingSupabase] = useState(false);
@@ -149,7 +151,7 @@ export const SettingsView: React.FC = () => {
 
   // Test Supabase connection
   const handleTestSupabase = async () => {
-    const url = (supabaseUrl || DEFAULT_SUPABASE_URL).trim();
+    const url = DEFAULT_SUPABASE_URL;
     const key = (supabaseAnonKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY).trim();
 
     if (!url || !key) {
@@ -704,7 +706,7 @@ export const SettingsView: React.FC = () => {
                 type="button"
                 disabled={isSyncingWithSupabase}
                 onClick={async () => {
-                  const url = (supabaseUrl || DEFAULT_SUPABASE_URL).trim();
+                  const url = DEFAULT_SUPABASE_URL;
                   const key = (supabaseAnonKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY).trim();
 
                   updateSettings({

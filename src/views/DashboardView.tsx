@@ -37,7 +37,12 @@ export const DashboardView: React.FC = () => {
     isAiThinking,
     setActiveTab,
     simulateIncomingCall,
+    contacts,
   } = useAssistant();
+
+  const specialContact =
+    contacts.find((c) => c.isSpecialRule) ||
+    contacts.find((c) => c.name.toLowerCase().includes('papa'));
 
   const [quickInput, setQuickInput] = useState('');
 
@@ -101,11 +106,17 @@ export const DashboardView: React.FC = () => {
                 <span>Talk to Lakshmi</span>
               </button>
               <button
-                onClick={() => simulateIncomingCall('contact-papa')}
+                onClick={() =>
+                  simulateIncomingCall(
+                    specialContact
+                      ? specialContact.phoneNumber || specialContact.id
+                      : undefined
+                  )
+                }
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs sm:text-sm font-medium transition active:scale-95"
               >
                 <Heart className="w-4 h-4 text-rose-400 fill-rose-500/20" />
-                <span>Simulate Papa Call Rule</span>
+                <span>{specialContact ? `Simulate ${specialContact.name} Call Rule` : 'Simulate Call Rule'}</span>
               </button>
             </div>
           </div>

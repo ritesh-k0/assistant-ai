@@ -1,5 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
 import confetti from 'canvas-confetti';
+
 import {
   Task,
   Reminder,
@@ -16,10 +23,16 @@ import {
   TaskCategory,
   TaskStatus,
 } from '../types';
+
 import { dbService } from '../services/db';
 import { apiService } from '../services/api';
 import { speechService } from '../services/speech';
 import { supabaseService } from '../services/supabaseService';
+import {
+  normalizePhoneNumber,
+  arePhoneNumbersEqual,
+  findContactByPhone,
+} from '../utils/phoneUtils';
 
 export type ActiveTab =
   | 'dashboard'
@@ -42,7 +55,13 @@ export interface ActiveCallState {
   relation?: string;
   isSpecialPapaRule?: boolean;
   priority: string;
-  status: 'ringing' | 'connected_voice_reply' | 'recording_message' | 'message_saved' | 'forwarding' | 'ended';
+  status:
+    | 'ringing'
+    | 'connected_voice_reply'
+    | 'recording_message'
+    | 'message_saved'
+    | 'forwarding'
+    | 'ended';
   secondsRinging: number;
   callerResponse?: string;
   unansweredTimeout: number;
@@ -62,9 +81,12 @@ export interface ToastNotification {
 interface AssistantContextType {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+
   settings: AssistantSettings;
-  updateSettings: (newSettings: Partial<AssistantSettings>) => void;
-  
+  updateSettings: (
+    newSettings: Partial<AssistantSettings>
+  ) => void;
+
   // Chat
   chatMessages: ChatMessage[];
   sendUserMessage: (text: string) => Promise<void>;
@@ -90,7 +112,9 @@ interface AssistantContextType {
 
   // Reminders
   reminders: Reminder[];
-  addReminder: (rem: Omit<Reminder, 'id' | 'createdAt' | 'isCompleted'>) => void;
+  addReminder: (
+    rem: Omit<Reminder, 'id' | 'createdAt' | 'isCompleted'>
+  ) => void;
   toggleReminder: (id: string) => void;
   deleteReminder: (id: string) => void;
 
@@ -98,7 +122,9 @@ interface AssistantContextType {
   routine: RoutineItem[];
   toggleRoutineCompleted: (id: string) => void;
   updateRoutineItem: (item: RoutineItem) => void;
-  addRoutineItem: (item: Omit<RoutineItem, 'id' | 'isCompletedToday'>) => void;
+  addRoutineItem: (
+    item: Omit<RoutineItem, 'id' | 'isCompletedToday'>
+  ) => void;
 
   // Calendar
   calendarEvents: CalendarEvent[];
@@ -107,18 +133,22 @@ interface AssistantContextType {
 
   // Memory
   memories: MemoryItem[];
-  addMemory: (content: string, category?: MemoryItem['category'], importance?: 'normal' | 'high') => void;
+  addMemory: (
+    content: string,
+    category?: MemoryItem['category'],
+    importance?: 'normal' | 'high'
+  ) => void;
   updateMemory: (id: string, content: string) => void;
   deleteMemory: (id: string) => void;
   clearAllMemories: () => void;
 
-  // Contacts & Papa Rule
+  // Contacts
   contacts: ImportantContact[];
   addContact: (contact: Omit<ImportantContact, 'id'>) => void;
   updateContact: (contact: ImportantContact) => void;
   deleteContact: (id: string) => void;
 
-  // Calls & Telephony
+  // Calls
   callHistory: CallRecord[];
   callMessages: CallMessage[];
   activeCall: ActiveCallState | null;
@@ -128,217 +158,488 @@ interface AssistantContextType {
   forwardIncomingCall: () => void;
   triggerVoiceAutoReply: () => void;
   submitCallerMessage: (messageText: string) => void;
-  markCallMessageStatus: (id: string, status: CallMessage['status']) => void;
+  markCallMessageStatus: (
+    id: string,
+    status: CallMessage['status']
+  ) => void;
   deleteCallRecord: (id: string) => void;
 
   // Social
   socialDrafts: SocialDraft[];
-  createSocialDraft: (draft: Omit<SocialDraft, 'id' | 'createdAt'>) => void;
-  updateSocialDraft: (id: string, updates: Partial<SocialDraft>) => void;
+  createSocialDraft: (
+    draft: Omit<SocialDraft, 'id' | 'createdAt'>
+  ) => void;
+  updateSocialDraft: (
+    id: string,
+    updates: Partial<SocialDraft>
+  ) => void;
   deleteSocialDraft: (id: string) => void;
-  publishSocialDraft: (id: string) => Promise<{ success: boolean; message: string }>;
+  publishSocialDraft: (
+    id: string
+  ) => Promise<{ success: boolean; message: string }>;
 
   // Notifications
   notifications: ToastNotification[];
   removeNotification: (id: string) => void;
   requestNotificationPermission: () => Promise<boolean>;
 
-  // Supabase Backend Sync
-  syncAllWithSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
+  // Supabase
+  syncAllWithSupabase: () => Promise<{
+    success: boolean;
+    count: number;
+    message: string;
+  }>;
+
   isSyncingWithSupabase: boolean;
 }
 
-const AssistantContext = createContext<AssistantContextType | undefined>(undefined);
+const AssistantContext = createContext<
+  AssistantContextType | undefined
+>(undefined);
 
-export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [settings, setSettings] = useState<AssistantSettings>(dbService.getSettings());
-  const [tasks, setTasks] = useState<Task[]>(dbService.getTasks());
-  const [reminders, setReminders] = useState<Reminder[]>(dbService.getReminders());
-  const [routine, setRoutine] = useState<RoutineItem[]>(dbService.getRoutine());
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(dbService.getCalendar());
-  const [memories, setMemories] = useState<MemoryItem[]>(dbService.getMemories());
-  const [contacts, setContacts] = useState<ImportantContact[]>(dbService.getContacts());
-  const [callHistory, setCallHistory] = useState<CallRecord[]>(dbService.getCallHistory());
-  const [callMessages, setCallMessages] = useState<CallMessage[]>(dbService.getCallMessages());
-  const [socialDrafts, setSocialDrafts] = useState<SocialDraft[]>(dbService.getSocialDrafts());
+export const AssistantProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
+  const [activeTab, setActiveTab] =
+    useState<ActiveTab>('dashboard');
 
-  // Chat state
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-welcome',
-      sender: 'assistant',
-      text: 'Ji Ritesh! Main Lakshmi hoon, aapki personal AI assistant. Aaj kya karna hai?',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
-  const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
+  const [settings, setSettings] =
+    useState<AssistantSettings>(dbService.getSettings());
 
-  // Voice state
-  const [isListening, setIsListening] = useState<boolean>(false);
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [voiceTranscript, setVoiceTranscript] = useState<string>('');
+  const [tasks, setTasks] =
+    useState<Task[]>(dbService.getTasks());
 
-  // Active incoming call state
-  const [activeCall, setActiveCall] = useState<ActiveCallState | null>(null);
+  const [reminders, setReminders] =
+    useState<Reminder[]>(dbService.getReminders());
+
+  const [routine, setRoutine] =
+    useState<RoutineItem[]>(dbService.getRoutine());
+
+  const [calendarEvents, setCalendarEvents] =
+    useState<CalendarEvent[]>(dbService.getCalendar());
+
+  const [memories, setMemories] =
+    useState<MemoryItem[]>(dbService.getMemories());
+
+  const [contacts, setContacts] =
+    useState<ImportantContact[]>(dbService.getContacts());
+
+  const [callHistory, setCallHistory] =
+    useState<CallRecord[]>(dbService.getCallHistory());
+
+  const [callMessages, setCallMessages] =
+    useState<CallMessage[]>(dbService.getCallMessages());
+
+  const [socialDrafts, setSocialDrafts] =
+    useState<SocialDraft[]>(dbService.getSocialDrafts());
+
+  const [chatMessages, setChatMessages] =
+    useState<ChatMessage[]>([
+      {
+        id: 'msg-welcome',
+        sender: 'assistant',
+        text: 'Ji Ritesh! Main Lakshmi hoon, aapki personal AI assistant. Aaj kya karna hai?',
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      },
+    ]);
+
+  const [isAiThinking, setIsAiThinking] =
+    useState<boolean>(false);
+
+  const [isListening, setIsListening] =
+    useState<boolean>(false);
+
+  const [isSpeaking, setIsSpeaking] =
+    useState<boolean>(false);
+
+  const [isMuted, setIsMuted] =
+    useState<boolean>(false);
+
+  const [voiceTranscript, setVoiceTranscript] =
+    useState<string>('');
+
+  const [activeCall, setActiveCall] =
+    useState<ActiveCallState | null>(null);
+
   const callRingTimerRef = useRef<any>(null);
 
-  // Toasts
-  const [notifications, setNotifications] = useState<ToastNotification[]>([]);
+  const [notifications, setNotifications] =
+    useState<ToastNotification[]>([]);
 
-  // Sync state to dbService
-  useEffect(() => dbService.saveSettings(settings), [settings]);
-  useEffect(() => dbService.saveTasks(tasks), [tasks]);
-  useEffect(() => dbService.saveReminders(reminders), [reminders]);
-  useEffect(() => dbService.saveRoutine(routine), [routine]);
-  useEffect(() => dbService.saveCalendar(calendarEvents), [calendarEvents]);
-  useEffect(() => dbService.saveMemories(memories), [memories]);
-  useEffect(() => dbService.saveContacts(contacts), [contacts]);
-  useEffect(() => dbService.saveCallHistory(callHistory), [callHistory]);
-  useEffect(() => dbService.saveCallMessages(callMessages), [callMessages]);
-  useEffect(() => dbService.saveSocialDrafts(socialDrafts), [socialDrafts]);
+  const [isSyncingWithSupabase, setIsSyncingWithSupabase] =
+    useState(false);
 
-  // Request browser notification permission
-  const requestNotificationPermission = async (): Promise<boolean> => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      const permission = await Notification.requestPermission();
-      return permission === 'granted';
+  // =====================================================
+  // LOCAL DB PERSISTENCE
+  // =====================================================
+
+  useEffect(() => {
+    dbService.saveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    dbService.saveTasks(tasks);
+  }, [tasks]);
+
+  useEffect(() => {
+    dbService.saveReminders(reminders);
+  }, [reminders]);
+
+  useEffect(() => {
+    dbService.saveRoutine(routine);
+  }, [routine]);
+
+  useEffect(() => {
+    dbService.saveCalendar(calendarEvents);
+  }, [calendarEvents]);
+
+  useEffect(() => {
+    dbService.saveMemories(memories);
+  }, [memories]);
+
+  useEffect(() => {
+    dbService.saveContacts(contacts);
+  }, [contacts]);
+
+  useEffect(() => {
+    dbService.saveCallHistory(callHistory);
+  }, [callHistory]);
+
+  useEffect(() => {
+    dbService.saveCallMessages(callMessages);
+  }, [callMessages]);
+
+  useEffect(() => {
+    dbService.saveSocialDrafts(socialDrafts);
+  }, [socialDrafts]);
+
+  // =====================================================
+  // HELPER
+  // =====================================================
+
+  const syncSafely = async (
+    operationName: string,
+    operation: () => Promise<any>
+  ) => {
+    try {
+      const result = await operation();
+
+      if (result === false) {
+        console.warn(
+          `${operationName}: Supabase sync returned false`
+        );
+      }
+
+      return result;
+    } catch (error) {
+      console.error(
+        `${operationName}: Supabase sync failed`,
+        error
+      );
+
+      return false;
     }
-    return false;
   };
 
-  const addToast = (notification: Omit<ToastNotification, 'id' | 'timestamp'>) => {
+  // =====================================================
+  // NOTIFICATIONS
+  // =====================================================
+
+  const requestNotificationPermission =
+    async (): Promise<boolean> => {
+      if (
+        typeof window !== 'undefined' &&
+        'Notification' in window
+      ) {
+        const permission =
+          await Notification.requestPermission();
+
+        return permission === 'granted';
+      }
+
+      return false;
+    };
+
+  const addToast = (
+    notification: Omit<
+      ToastNotification,
+      'id' | 'timestamp'
+    >
+  ) => {
     const newToast: ToastNotification = {
       ...notification,
       id: `toast-${Date.now()}-${Math.random()}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
-    setNotifications((prev) => [newToast, ...prev].slice(0, 8));
 
-    // Also trigger browser notification if enabled
-    if (settings.notificationsEnabled && typeof window !== 'undefined' && 'Notification' in window) {
+    setNotifications((prev) =>
+      [newToast, ...prev].slice(0, 8)
+    );
+
+    if (
+      settings.notificationsEnabled &&
+      typeof window !== 'undefined' &&
+      'Notification' in window
+    ) {
       if (Notification.permission === 'granted') {
-        new Notification(`Lakshmi: ${notification.title}`, {
-          body: notification.message,
-          icon: '/favicon.ico',
-        });
+        new Notification(
+          `Lakshmi: ${notification.title}`,
+          {
+            body: notification.message,
+            icon: '/favicon.ico',
+          }
+        );
       }
     }
   };
 
   const removeNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setNotifications((prev) =>
+      prev.filter((n) => n.id !== id)
+    );
   };
 
-  const [isSyncingWithSupabase, setIsSyncingWithSupabase] = useState(false);
+  // =====================================================
+  // INITIALIZE SUPABASE
+  // =====================================================
 
-  // Auto-init supabaseService if configured
   useEffect(() => {
-    if (settings.supabaseConfig?.url && settings.supabaseConfig?.anonKey) {
-      supabaseService.init(settings.supabaseConfig.url, settings.supabaseConfig.anonKey);
+    if (
+      settings.supabaseConfig?.url &&
+      settings.supabaseConfig?.anonKey
+    ) {
+      supabaseService.init(
+        settings.supabaseConfig.url,
+        settings.supabaseConfig.anonKey
+      );
     }
-  }, [settings.supabaseConfig?.url, settings.supabaseConfig?.anonKey]);
+  }, [
+    settings.supabaseConfig?.url,
+    settings.supabaseConfig?.anonKey,
+  ]);
 
-  // Startup Hydration: Read persisted Supabase records and hydrate state without losing local data
+  // =====================================================
+  // SUPABASE HYDRATION
+  // =====================================================
+
   useEffect(() => {
     let isMounted = true;
 
     async function hydrateAndSync() {
       try {
-        const remoteData = await supabaseService.hydrateFromSupabase();
+        const remoteData =
+          await supabaseService.hydrateFromSupabase();
+
         if (!isMounted || !remoteData) return;
 
-        if (remoteData.tasks && remoteData.tasks.length > 0) {
+        if (remoteData.tasks?.length) {
           setTasks((local) => {
-            const remoteIds = new Set(remoteData.tasks!.map((t) => t.id));
-            const localOnly = local.filter((t) => !remoteIds.has(t.id));
-            return [...remoteData.tasks!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.tasks!.map((t) => t.id)
+            );
+
+            const localOnly = local.filter(
+              (t) => !remoteIds.has(t.id)
+            );
+
+            return [
+              ...remoteData.tasks!,
+              ...localOnly,
+            ];
           });
         }
 
-        if (remoteData.reminders && remoteData.reminders.length > 0) {
+        if (remoteData.reminders?.length) {
           setReminders((local) => {
-            const remoteIds = new Set(remoteData.reminders!.map((r) => r.id));
-            const localOnly = local.filter((r) => !remoteIds.has(r.id));
-            return [...remoteData.reminders!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.reminders!.map((r) => r.id)
+            );
+
+            const localOnly = local.filter(
+              (r) => !remoteIds.has(r.id)
+            );
+
+            return [
+              ...remoteData.reminders!,
+              ...localOnly,
+            ];
           });
         }
 
-        if (remoteData.routine && remoteData.routine.length > 0) {
+        // FIX: service returns routineItems
+        if (remoteData.routineItems?.length) {
           setRoutine((local) => {
-            const remoteIds = new Set(remoteData.routine!.map((ro) => ro.id));
-            const localOnly = local.filter((ro) => !remoteIds.has(ro.id));
-            return [...remoteData.routine!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.routineItems!.map(
+                (item) => item.id
+              )
+            );
+
+            const localOnly = local.filter(
+              (item) => !remoteIds.has(item.id)
+            );
+
+            return [
+              ...remoteData.routineItems!,
+              ...localOnly,
+            ];
           });
         }
 
-        if (remoteData.memories && remoteData.memories.length > 0) {
+        if (remoteData.memories?.length) {
           setMemories((local) => {
-            const remoteIds = new Set(remoteData.memories!.map((m) => m.id));
-            const localOnly = local.filter((m) => !remoteIds.has(m.id));
-            return [...remoteData.memories!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.memories!.map((m) => m.id)
+            );
+
+            const localOnly = local.filter(
+              (m) => !remoteIds.has(m.id)
+            );
+
+            return [
+              ...remoteData.memories!,
+              ...localOnly,
+            ];
           });
         }
 
-        if (remoteData.contacts && remoteData.contacts.length > 0) {
+        if (remoteData.contacts?.length) {
           setContacts((local) => {
-            const remoteIds = new Set(remoteData.contacts!.map((c) => c.id));
-            const localOnly = local.filter((c) => !remoteIds.has(c.id));
-            return [...remoteData.contacts!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.contacts!.map((c) => c.id)
+            );
+
+            const localOnly = local.filter(
+              (c) => !remoteIds.has(c.id)
+            );
+
+            return [
+              ...remoteData.contacts!,
+              ...localOnly,
+            ];
           });
         }
 
-        if (remoteData.callHistory && remoteData.callHistory.length > 0) {
+        if (remoteData.callHistory?.length) {
           setCallHistory((local) => {
-            const remoteIds = new Set(remoteData.callHistory!.map((ch) => ch.id));
-            const localOnly = local.filter((ch) => !remoteIds.has(ch.id));
-            return [...remoteData.callHistory!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.callHistory!.map(
+                (c) => c.id
+              )
+            );
+
+            const localOnly = local.filter(
+              (c) => !remoteIds.has(c.id)
+            );
+
+            return [
+              ...remoteData.callHistory!,
+              ...localOnly,
+            ];
           });
         }
 
-        if (remoteData.callMessages && remoteData.callMessages.length > 0) {
+        if (remoteData.callMessages?.length) {
           setCallMessages((local) => {
-            const remoteIds = new Set(remoteData.callMessages!.map((cm) => cm.id));
-            const localOnly = local.filter((cm) => !remoteIds.has(cm.id));
-            return [...remoteData.callMessages!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.callMessages!.map(
+                (m) => m.id
+              )
+            );
+
+            const localOnly = local.filter(
+              (m) => !remoteIds.has(m.id)
+            );
+
+            return [
+              ...remoteData.callMessages!,
+              ...localOnly,
+            ];
           });
         }
 
-        if (remoteData.socialDrafts && remoteData.socialDrafts.length > 0) {
+        if (remoteData.socialDrafts?.length) {
           setSocialDrafts((local) => {
-            const remoteIds = new Set(remoteData.socialDrafts!.map((sd) => sd.id));
-            const localOnly = local.filter((sd) => !remoteIds.has(sd.id));
-            return [...remoteData.socialDrafts!, ...localOnly];
+            const remoteIds = new Set(
+              remoteData.socialDrafts!.map(
+                (d) => d.id
+              )
+            );
+
+            const localOnly = local.filter(
+              (d) => !remoteIds.has(d.id)
+            );
+
+            return [
+              ...remoteData.socialDrafts!,
+              ...localOnly,
+            ];
           });
+        }
+
+        // Chat history hydration
+        if (remoteData.chatHistory?.length) {
+          setChatMessages(remoteData.chatHistory);
         }
       } catch (err) {
-        console.warn('Initial Supabase hydration notice:', err);
+        console.warn(
+          'Initial Supabase hydration notice:',
+          err
+        );
       }
     }
 
     hydrateAndSync();
 
-    const { data: authSub } = supabaseService.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN') {
-        hydrateAndSync();
-      }
-    });
+    const { data: authSub } =
+      supabaseService.onAuthStateChange((event) => {
+        if (event === 'SIGNED_IN') {
+          hydrateAndSync();
+        }
+      });
 
     return () => {
       isMounted = false;
       authSub?.subscription?.unsubscribe();
+
+      if (callRingTimerRef.current) {
+        clearInterval(callRingTimerRef.current);
+      }
     };
   }, []);
 
-  const updateSettings = (newSettings: Partial<AssistantSettings>) => {
+  // =====================================================
+  // SETTINGS
+  // =====================================================
+
+  const updateSettings = (
+    newSettings: Partial<AssistantSettings>
+  ) => {
     setSettings((prev) => {
-      const updated = { ...prev, ...newSettings };
-      if (updated.supabaseConfig?.url && updated.supabaseConfig?.anonKey) {
-        supabaseService.init(updated.supabaseConfig.url, updated.supabaseConfig.anonKey);
+      const updated = {
+        ...prev,
+        ...newSettings,
+      };
+
+      if (
+        updated.supabaseConfig?.url &&
+        updated.supabaseConfig?.anonKey
+      ) {
+        supabaseService.init(
+          updated.supabaseConfig.url,
+          updated.supabaseConfig.anonKey
+        );
       }
+
       return updated;
     });
+
     addToast({
       title: 'Settings Updated',
       message: 'Aapki settings save ho gayi hain.',
@@ -346,79 +647,151 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  const syncAllWithSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
-    if (!settings.supabaseConfig?.url) {
-      return {
-        success: false,
-        count: 0,
-        message: 'Please provide your Supabase Project URL in Settings.',
-      };
+  // =====================================================
+  // SYNC ALL
+  // =====================================================
+
+  const syncAllWithSupabase =
+    async (): Promise<{
+      success: boolean;
+      count: number;
+      message: string;
+    }> => {
+      if (
+        !settings.supabaseConfig?.url ||
+        !settings.supabaseConfig?.anonKey
+      ) {
+        return {
+          success: false,
+          count: 0,
+          message:
+            'Please provide your Supabase URL and Anon Key in Settings.',
+        };
+      }
+
+      setIsSyncingWithSupabase(true);
+
+      try {
+        supabaseService.init(
+          settings.supabaseConfig.url,
+          settings.supabaseConfig.anonKey
+        );
+
+        const result =
+          await supabaseService.syncAllData({
+            tasks,
+            reminders,
+            routine,
+            memories,
+            contacts,
+            callHistory,
+            callMessages,
+            socialDrafts,
+            chatMessages,
+          });
+
+        if (result.success) {
+          addToast({
+            title: 'Supabase Synced',
+            message: `Successfully saved ${result.totalSynced} Lakshmi assistant records to Supabase!`,
+            type: 'success',
+          });
+
+          return {
+            success: true,
+            count: result.totalSynced,
+            message: `Successfully synced ${result.totalSynced} records to Supabase!`,
+          };
+        }
+
+        const failedCount =
+          result.failed ?? 0;
+
+        const message =
+          `Sync completed with ${failedCount} failed records.`;
+
+        addToast({
+          title: 'Supabase Notice',
+          message,
+          type: 'warning',
+        });
+
+        return {
+          success: false,
+          count: result.totalSynced ?? 0,
+          message,
+        };
+      } catch (error: any) {
+        console.error(
+          'Supabase sync error:',
+          error
+        );
+
+        const message =
+          error?.message ||
+          'Failed to sync with Supabase.';
+
+        addToast({
+          title: 'Supabase Error',
+          message,
+          type: 'warning',
+        });
+
+        return {
+          success: false,
+          count: 0,
+          message,
+        };
+      } finally {
+        setIsSyncingWithSupabase(false);
+      }
+    };
+
+  // =====================================================
+  // SPEECH
+  // =====================================================
+
+  const speakLakshmiText = async (
+    text: string
+  ) => {
+    if (
+      isMuted ||
+      !settings.soundEnabled
+    ) {
+      return;
     }
 
-    setIsSyncingWithSupabase(true);
-    supabaseService.init(settings.supabaseConfig.url, settings.supabaseConfig.anonKey);
-
-    const result = await supabaseService.syncAllData({
-      tasks,
-      reminders,
-      routine,
-      memories,
-      contacts,
-      callHistory,
-      callMessages,
-      socialDrafts,
-      chatMessages,
-    });
-
-    setIsSyncingWithSupabase(false);
-
-    if (result.success) {
-      addToast({
-        title: 'Supabase Synced',
-        message: `Successfully saved ${result.count} Lakshmi assistant records to Supabase!`,
-        type: 'success',
-      });
-      return {
-        success: true,
-        count: result.count,
-        message: `Successfully synced ${result.count} records to Supabase!`,
-      };
-    } else {
-      addToast({
-        title: 'Supabase Notice',
-        message: result.error || 'Sync encountered an issue. Ensure SQL schema is run in Supabase SQL editor.',
-        type: 'warning',
-      });
-      return {
-        success: false,
-        count: 0,
-        message: result.error || 'Failed to sync with Supabase.',
-      };
-    }
-  };
-
-  // Speak Lakshmi's response
-  const speakLakshmiText = async (text: string) => {
-    if (isMuted || !settings.soundEnabled) return;
     setIsSpeaking(true);
 
     try {
-      // First try Gemini high-fidelity TTS
-      const res = await apiService.getGeminiTTS(text);
+      const res =
+        await apiService.getGeminiTTS(text);
+
       if (res.audioBase64) {
-        await speechService.playBase64Audio(res.audioBase64, res.mimeType || 'audio/wav', () => {
-          setIsSpeaking(false);
-        });
+        await speechService.playBase64Audio(
+          res.audioBase64,
+          res.mimeType || 'audio/wav',
+          () => {
+            setIsSpeaking(false);
+          }
+        );
+
         return;
       }
     } catch (e) {
-      console.warn('Gemini TTS error, falling back to Web Speech:', e);
+      console.warn(
+        'Gemini TTS error, falling back to Web Speech:',
+        e
+      );
     }
 
-    // Fallback to browser synthesis
-    speechService.speakBrowser(text, () => {
-      setIsSpeaking(false);
-    }, 'female');
+    speechService.speakBrowser(
+      text,
+      () => {
+        setIsSpeaking(false);
+      },
+      'female'
+    );
   };
 
   const stopSpeaking = () => {
@@ -426,69 +799,150 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsSpeaking(false);
   };
 
-  // Process Lakshmi Structured Action
-  const executeLakshmiAction = (action: any) => {
+  // =====================================================
+  // LAKSHMI ACTIONS
+  // =====================================================
+
+  const executeLakshmiAction = (
+    action: any
+  ) => {
     if (!action || !action.type) return;
 
     switch (action.type) {
       case 'create_task': {
-        const { title, category = 'Coding', priority = 'medium', date, time } = action.data || {};
+        const {
+          title,
+          category = 'Coding',
+          priority = 'medium',
+          date,
+          time,
+        } = action.data || {};
+
         if (title) {
           const newTask: Task = {
-            id: `task-${Date.now()}`,
+            id: crypto.randomUUID(),
             title,
-            category: (category as TaskCategory) || 'Coding',
-            priority: (priority as Priority) || 'medium',
-            date: date || new Date().toISOString().split('T')[0],
+            category:
+              (category as TaskCategory) ||
+              'Coding',
+            priority:
+              (priority as Priority) ||
+              'medium',
+            date:
+              date ||
+              new Date()
+                .toISOString()
+                .split('T')[0],
             time: time || '18:00',
             status: 'pending',
-            createdAt: new Date().toISOString(),
+            createdAt:
+              new Date().toISOString(),
           };
-          setTasks((prev) => [newTask, ...prev]);
+
+          setTasks((prev) => [
+            newTask,
+            ...prev,
+          ]);
+
+          syncSafely(
+            'AI task',
+            () =>
+              supabaseService.syncTask(
+                newTask
+              )
+          );
+
           addToast({
             title: 'Task Created',
             message: `Task "${title}" add kar diya gaya hai.`,
             type: 'success',
           });
         }
+
         break;
       }
+
       case 'create_reminder': {
-        const { title, date, time = '19:00', type = 'one-time' } = action.data || {};
+        const {
+          title,
+          date,
+          time = '19:00',
+          type = 'one-time',
+        } = action.data || {};
+
         if (title) {
           const newReminder: Reminder = {
             id: `rem-${Date.now()}`,
             title,
-            date: date || new Date().toISOString().split('T')[0],
+            date:
+              date ||
+              new Date()
+                .toISOString()
+                .split('T')[0],
             time,
             type: type || 'one-time',
             category: 'Personal',
             isCompleted: false,
-            createdAt: new Date().toISOString(),
+            createdAt:
+              new Date().toISOString(),
           };
-          setReminders((prev) => [newReminder, ...prev]);
+
+          setReminders((prev) => [
+            newReminder,
+            ...prev,
+          ]);
+
+          // FIX: AI-created reminder also syncs
+          syncSafely(
+            'AI reminder',
+            () =>
+              supabaseService.syncReminder(
+                newReminder
+              )
+          );
+
           addToast({
             title: 'Reminder Set',
             message: `Reminder "${title}" set ho gaya (${time}).`,
             type: 'info',
           });
         }
+
         break;
       }
+
       case 'save_memory': {
-        const { content, category = 'General' } = action.data || {};
+        const {
+          content,
+          category = 'General',
+        } = action.data || {};
+
         if (content) {
-          addMemory(content, category, 'high');
+          addMemory(
+            content,
+            category,
+            'high'
+          );
+
           addToast({
             title: 'Memory Saved',
-            message: 'Lakshmi ne ye jaankari yaad rakh li hai.',
+            message:
+              'Lakshmi ne ye jaankari yaad rakh li hai.',
             type: 'success',
           });
         }
+
         break;
       }
+
       case 'update_routine': {
-        const { title, period = 'Evening', startTime = '19:00', endTime = '20:00' } = action.data || {};
+        const {
+          title,
+          period = 'Evening',
+          startTime = '19:00',
+          endTime = '20:00',
+        } = action.data || {};
+
         if (title) {
           addRoutineItem({
             period,
@@ -499,108 +953,233 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             category: 'Coding',
             enabled: true,
           });
+
           addToast({
             title: 'Routine Updated',
             message: `Routine me "${title}" update ho gaya.`,
             type: 'success',
           });
         }
+
         break;
       }
+
       case 'create_event': {
-        const { title, date, startTime = '10:00', endTime = '11:00', category = 'College' } = action.data || {};
+        const {
+          title,
+          date,
+          startTime = '10:00',
+          endTime = '11:00',
+          category = 'College',
+        } = action.data || {};
+
         if (title) {
           addCalendarEvent({
             title,
-            date: date || new Date().toISOString().split('T')[0],
+            date:
+              date ||
+              new Date()
+                .toISOString()
+                .split('T')[0],
             startTime,
             endTime,
             category,
           });
         }
+
         break;
       }
+
       case 'generate_social': {
-        const { platform = 'linkedin', topic } = action.data || {};
+        const {
+          platform = 'linkedin',
+          topic,
+        } = action.data || {};
+
         if (topic) {
-          apiService.generateSocialPost({ platform, topic }).then((res) => {
-            createSocialDraft({
+          apiService
+            .generateSocialPost({
               platform,
               topic,
-              content: res.content,
-              caption: res.caption,
-              hashtags: res.hashtags,
-              status: 'draft',
+            })
+            .then((res) => {
+              createSocialDraft({
+                platform,
+                topic,
+                content: res.content,
+                caption: res.caption,
+                hashtags: res.hashtags,
+                status: 'draft',
+              });
+
+              addToast({
+                title: 'Social Draft Ready',
+                message: `${platform.toUpperCase()} post draft create ho gaya.`,
+                type: 'success',
+              });
+            })
+            .catch((error) => {
+              console.error(
+                'Social generation error:',
+                error
+              );
+
+              addToast({
+                title: 'Social Draft Failed',
+                message:
+                  'Social post generate nahi ho paya.',
+                type: 'warning',
+              });
             });
-            addToast({
-              title: 'Social Draft Ready',
-              message: `${platform.toUpperCase()} post draft create ho gaya.`,
-              type: 'success',
-            });
-          });
         }
+
         break;
       }
+
       default:
         break;
     }
   };
 
-  // Send user message in Chat or Voice
-  const sendUserMessage = async (text: string) => {
+  // =====================================================
+  // CHAT
+  // =====================================================
+
+  const sendUserMessage = async (
+    text: string
+  ) => {
     if (!text.trim()) return;
 
     const userMsg: ChatMessage = {
       id: `msg-user-${Date.now()}`,
       sender: 'user',
       text: text.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp:
+        new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
     };
 
-    setChatMessages((prev) => [...prev, userMsg]);
-    supabaseService.syncChatMessage(userMsg);
+    setChatMessages((prev) => [
+      ...prev,
+      userMsg,
+    ]);
+
+    syncSafely(
+      'User chat message',
+      () =>
+        supabaseService.syncChatMessage(
+          userMsg
+        )
+    );
+
     setIsAiThinking(true);
 
     try {
-      const response = await apiService.sendMessage({
-        message: text.trim(),
-        userContext: {
-          todayTasks: tasks.filter((t) => t.status !== 'completed').slice(0, 5),
-          activeReminders: reminders.filter((r) => !r.isCompleted).slice(0, 5),
-          recentMemories: memories.slice(0, 5),
-        },
-      });
+      const response =
+        await apiService.sendMessage({
+          message: text.trim(),
+          userContext: {
+            todayTasks: tasks
+              .filter(
+                (t) =>
+                  t.status !==
+                  'completed'
+              )
+              .slice(0, 5),
+
+            activeReminders: reminders
+              .filter(
+                (r) =>
+                  !r.isCompleted
+              )
+              .slice(0, 5),
+
+            recentMemories:
+              memories.slice(0, 5),
+          },
+        });
 
       const assistantMsg: ChatMessage = {
         id: `msg-assistant-${Date.now()}`,
         sender: 'assistant',
         text: response.reply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp:
+          new Date().toLocaleTimeString(
+            [],
+            {
+              hour: '2-digit',
+              minute: '2-digit',
+            }
+          ),
       };
 
       if (response.action) {
         assistantMsg.actionTaken = {
-          type: response.action.type as any,
-          label: response.action.type.replace('_', ' ').toUpperCase(),
-          data: response.action.data,
+          type:
+            response.action.type as any,
+          label:
+            response.action.type
+              .replace('_', ' ')
+              .toUpperCase(),
+          data:
+            response.action.data,
         };
-        executeLakshmiAction(response.action);
+
+        executeLakshmiAction(
+          response.action
+        );
       }
 
-      setChatMessages((prev) => [...prev, assistantMsg]);
-      supabaseService.syncChatMessage(assistantMsg);
+      setChatMessages((prev) => [
+        ...prev,
+        assistantMsg,
+      ]);
 
-      // Speak back
-      speakLakshmiText(response.reply);
+      syncSafely(
+        'Assistant chat message',
+        () =>
+          supabaseService.syncChatMessage(
+            assistantMsg
+          )
+      );
+
+      await speakLakshmiText(
+        response.reply
+      );
     } catch (err: any) {
-      console.error('Error generating reply:', err);
+      console.error(
+        'Error generating reply:',
+        err
+      );
+
       const fallbackMsg: ChatMessage = {
         id: `msg-err-${Date.now()}`,
         sender: 'assistant',
         text: 'Ji Ritesh, main samajh gayi. Ek second me update karti hoon.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp:
+          new Date().toLocaleTimeString(
+            [],
+            {
+              hour: '2-digit',
+              minute: '2-digit',
+            }
+          ),
       };
-      setChatMessages((prev) => [...prev, fallbackMsg]);
+
+      setChatMessages((prev) => [
+        ...prev,
+        fallbackMsg,
+      ]);
+
+      syncSafely(
+        'Fallback chat message',
+        () =>
+          supabaseService.syncChatMessage(
+            fallbackMsg
+          )
+      );
     } finally {
       setIsAiThinking(false);
     }
@@ -612,30 +1191,58 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         id: `msg-${Date.now()}`,
         sender: 'assistant',
         text: 'Ji Ritesh, chat clear kar di gayi hai. Bataiye, kya kaam hai?',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp:
+          new Date().toLocaleTimeString(
+            [],
+            {
+              hour: '2-digit',
+              minute: '2-digit',
+            }
+          ),
       },
     ]);
   };
 
-  // Voice recognition controls
+  // =====================================================
+  // VOICE
+  // =====================================================
+
   const startVoiceListening = () => {
     if (isListening) return;
+
     setIsListening(true);
     setVoiceTranscript('');
 
-    const lang = settings.languageMode === 'hindi' ? 'hi-IN' : 'en-IN';
+    const lang =
+      settings.languageMode === 'hindi'
+        ? 'hi-IN'
+        : 'en-IN';
 
     speechService.startListening(
       (transcript, isFinal) => {
-        setVoiceTranscript(transcript);
-        if (isFinal && transcript.trim()) {
+        setVoiceTranscript(
+          transcript
+        );
+
+        if (
+          isFinal &&
+          transcript.trim()
+        ) {
           setIsListening(false);
-          sendUserMessage(transcript.trim());
+
+          sendUserMessage(
+            transcript.trim()
+          );
+
           setVoiceTranscript('');
         }
       },
       (error) => {
-        console.warn('Speech error:', error);
+        console.warn(
+          'Speech error:',
+          error
+        );
+
         setIsListening(false);
       },
       () => {
@@ -648,21 +1255,43 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const stopVoiceListening = () => {
     speechService.stopListening();
     setIsListening(false);
+
     if (voiceTranscript.trim()) {
-      sendUserMessage(voiceTranscript.trim());
+      sendUserMessage(
+        voiceTranscript.trim()
+      );
+
       setVoiceTranscript('');
     }
   };
 
-  // Tasks actions
-  const addTask = (taskData: Omit<Task, 'id' | 'createdAt'>) => {
+  // =====================================================
+  // TASKS
+  // =====================================================
+
+  const addTask = (
+    taskData: Omit<Task, 'id' | 'createdAt'>
+  ) => {
     const newTask: Task = {
       ...taskData,
-      id: `task-${Date.now()}`,
-      createdAt: new Date().toISOString(),
+      id: crypto.randomUUID(),
+      createdAt:
+        new Date().toISOString(),
     };
-    setTasks((prev) => [newTask, ...prev]);
-    supabaseService.syncTask(newTask);
+
+    setTasks((prev) => [
+      newTask,
+      ...prev,
+    ]);
+
+    syncSafely(
+      'Add task',
+      () =>
+        supabaseService.syncTask(
+          newTask
+        )
+    );
+
     addToast({
       title: 'Task Added',
       message: `"${newTask.title}" added to ${newTask.category}.`,
@@ -670,42 +1299,101 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  const toggleTaskStatus = (id: string) => {
+  const toggleTaskStatus = (
+    id: string
+  ) => {
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id === id) {
-          const isNowCompleted = t.status !== 'completed';
+          const isNowCompleted =
+            t.status !== 'completed';
+
           if (isNowCompleted) {
-            confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
+            confetti({
+              particleCount: 40,
+              spread: 60,
+              origin: { y: 0.7 },
+            });
           }
+
           const updated = {
             ...t,
-            status: (isNowCompleted ? 'completed' : 'pending') as TaskStatus,
-            completedAt: isNowCompleted ? new Date().toISOString() : undefined,
+            status: (
+              isNowCompleted
+                ? 'completed'
+                : 'pending'
+            ) as TaskStatus,
+            completedAt:
+              isNowCompleted
+                ? new Date().toISOString()
+                : undefined,
           };
-          supabaseService.syncTask(updated);
+
+          syncSafely(
+            'Toggle task',
+            () =>
+              supabaseService.syncTask(
+                updated
+              )
+          );
+
           return updated;
         }
+
         return t;
       })
     );
   };
 
-  const deleteTask = (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    supabaseService.deleteTask(id);
+  const deleteTask = (
+    id: string
+  ) => {
+    setTasks((prev) =>
+      prev.filter(
+        (t) => t.id !== id
+      )
+    );
+
+    syncSafely(
+      'Delete task',
+      () =>
+        supabaseService.deleteTask(
+          id
+        )
+    );
   };
 
-  // Reminders actions
-  const addReminder = (remData: Omit<Reminder, 'id' | 'createdAt' | 'isCompleted'>) => {
+  // =====================================================
+  // REMINDERS
+  // =====================================================
+
+  const addReminder = (
+    remData: Omit<
+      Reminder,
+      'id' | 'createdAt' | 'isCompleted'
+    >
+  ) => {
     const newRem: Reminder = {
       ...remData,
       id: `rem-${Date.now()}`,
       isCompleted: false,
-      createdAt: new Date().toISOString(),
+      createdAt:
+        new Date().toISOString(),
     };
-    setReminders((prev) => [newRem, ...prev]);
-    supabaseService.syncReminder(newRem);
+
+    setReminders((prev) => [
+      newRem,
+      ...prev,
+    ]);
+
+    syncSafely(
+      'Add reminder',
+      () =>
+        supabaseService.syncReminder(
+          newRem
+        )
+    );
+
     addToast({
       title: 'Reminder Saved',
       message: `Reminder "${newRem.title}" set for ${newRem.time}.`,
@@ -713,60 +1401,162 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  const toggleReminder = (id: string) => {
+  const toggleReminder = (
+    id: string
+  ) => {
     setReminders((prev) =>
       prev.map((r) => {
         if (r.id === id) {
-          const updated = { ...r, isCompleted: !r.isCompleted };
-          supabaseService.syncReminder(updated);
+          const updated = {
+            ...r,
+            isCompleted:
+              !r.isCompleted,
+          };
+
+          syncSafely(
+            'Toggle reminder',
+            () =>
+              supabaseService.syncReminder(
+                updated
+              )
+          );
+
           return updated;
         }
+
         return r;
       })
     );
   };
 
-  const deleteReminder = (id: string) => {
-    setReminders((prev) => prev.filter((r) => r.id !== id));
-    supabaseService.deleteReminder(id);
+  const deleteReminder = (
+    id: string
+  ) => {
+    setReminders((prev) =>
+      prev.filter(
+        (r) => r.id !== id
+      )
+    );
+
+    syncSafely(
+      'Delete reminder',
+      () =>
+        supabaseService.deleteReminder(
+          id
+        )
+    );
   };
 
-  // Routine actions
-  const toggleRoutineCompleted = (id: string) => {
+  // =====================================================
+  // ROUTINE
+  // =====================================================
+
+  const toggleRoutineCompleted = (
+    id: string
+  ) => {
     setRoutine((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          const nextVal = !item.isCompletedToday;
+          const nextVal =
+            !item.isCompletedToday;
+
           if (nextVal) {
-            confetti({ particleCount: 30, spread: 50 });
+            confetti({
+              particleCount: 30,
+              spread: 50,
+            });
           }
-          return { ...item, isCompletedToday: nextVal };
+
+          const updated = {
+            ...item,
+            isCompletedToday: nextVal,
+          };
+
+          // FIX: routine toggle now syncs
+          syncSafely(
+            'Toggle routine',
+            () =>
+              supabaseService.syncRoutineItem(
+                updated
+              )
+          );
+
+          return updated;
         }
+
         return item;
       })
     );
   };
 
-  const updateRoutineItem = (updated: RoutineItem) => {
-    setRoutine((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+  const updateRoutineItem = (
+    updated: RoutineItem
+  ) => {
+    setRoutine((prev) =>
+      prev.map((item) =>
+        item.id === updated.id
+          ? updated
+          : item
+      )
+    );
+
+    // FIX: routine update now syncs
+    syncSafely(
+      'Update routine',
+      () =>
+        supabaseService.syncRoutineItem(
+          updated
+        )
+    );
   };
 
-  const addRoutineItem = (itemData: Omit<RoutineItem, 'id' | 'isCompletedToday'>) => {
+  const addRoutineItem = (
+    itemData: Omit<
+      RoutineItem,
+      'id' | 'isCompletedToday'
+    >
+  ) => {
     const newItem: RoutineItem = {
       ...itemData,
       id: `rt-${Date.now()}`,
       isCompletedToday: false,
     };
-    setRoutine((prev) => [...prev, newItem]);
+
+    setRoutine((prev) => [
+      ...prev,
+      newItem,
+    ]);
+
+    // FIX: routine add now syncs
+    syncSafely(
+      'Add routine',
+      () =>
+        supabaseService.syncRoutineItem(
+          newItem
+        )
+    );
   };
 
-  // Calendar actions
-  const addCalendarEvent = (eventData: Omit<CalendarEvent, 'id'>) => {
+  // =====================================================
+  // CALENDAR
+  // =====================================================
+
+  const addCalendarEvent = (
+    eventData: Omit<
+      CalendarEvent,
+      'id'
+    >
+  ) => {
     const newEvent: CalendarEvent = {
       ...eventData,
       id: `event-${Date.now()}`,
     };
-    setCalendarEvents((prev) => [...prev, newEvent]);
+
+    setCalendarEvents((prev) => [
+      ...prev,
+      newEvent,
+    ]);
+
     addToast({
       title: 'Event Scheduled',
       message: `Event "${newEvent.title}" on ${newEvent.date}.`,
@@ -774,155 +1564,391 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  const deleteCalendarEvent = (id: string) => {
-    setCalendarEvents((prev) => prev.filter((e) => e.id !== id));
+  const deleteCalendarEvent = (
+    id: string
+  ) => {
+    setCalendarEvents((prev) =>
+      prev.filter(
+        (e) => e.id !== id
+      )
+    );
   };
 
-  // Memory actions
+  // =====================================================
+  // MEMORY
+  // =====================================================
+
   const addMemory = (
     content: string,
     category: MemoryItem['category'] = 'General',
-    importance: 'normal' | 'high' = 'normal'
+    importance:
+      | 'normal'
+      | 'high' = 'normal'
   ) => {
     const newMem: MemoryItem = {
       id: `mem-${Date.now()}`,
       content,
       category,
       importance,
-      createdAt: new Date().toISOString(),
+      createdAt:
+        new Date().toISOString(),
     };
-    setMemories((prev) => [newMem, ...prev]);
-    supabaseService.syncMemory(newMem);
-  };
 
-  const updateMemory = (id: string, content: string) => {
-    setMemories((prev) =>
-      prev.map((m) =>
-        m.id === id ? { ...m, content, updatedAt: new Date().toISOString() } : m
-      )
+    setMemories((prev) => [
+      newMem,
+      ...prev,
+    ]);
+
+    syncSafely(
+      'Add memory',
+      () =>
+        supabaseService.syncMemory(
+          newMem
+        )
     );
   };
 
-  const deleteMemory = (id: string) => {
-    setMemories((prev) => prev.filter((m) => m.id !== id));
+  const updateMemory = (
+    id: string,
+    content: string
+  ) => {
+    const updatedMemory =
+      memories.find(
+        (m) => m.id === id
+      );
+
+    if (!updatedMemory) return;
+
+    const updated: MemoryItem = {
+      ...updatedMemory,
+      content,
+      updatedAt:
+        new Date().toISOString(),
+    };
+
+    setMemories((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? updated
+          : m
+      )
+    );
+
+    // FIX: memory update now syncs
+    syncSafely(
+      'Update memory',
+      () =>
+        supabaseService.syncMemory(
+          updated
+        )
+    );
+  };
+
+  const deleteMemory = (
+    id: string
+  ) => {
+    setMemories((prev) =>
+      prev.filter(
+        (m) => m.id !== id
+      )
+    );
+
+    // FIX: memory delete now syncs
+    syncSafely(
+      'Delete memory',
+      () =>
+        supabaseService.deleteMemory(
+          id
+        )
+    );
   };
 
   const clearAllMemories = () => {
+    const ids = memories.map(
+      (memory) => memory.id
+    );
+
     setMemories([]);
+
+    // FIX: delete memories from Supabase too
+    ids.forEach((id) => {
+      syncSafely(
+        'Delete memory',
+        () =>
+          supabaseService.deleteMemory(
+            id
+          )
+      );
+    });
+
     addToast({
       title: 'Memories Cleared',
-      message: 'All stored memories have been deleted.',
+      message:
+        'All stored memories have been deleted.',
       type: 'warning',
     });
   };
 
-  // Contacts actions
-  const addContact = (contactData: Omit<ImportantContact, 'id'>) => {
+  // =====================================================
+  // CONTACTS
+  // =====================================================
+
+  const addContact = (
+    contactData: Omit<
+      ImportantContact,
+      'id'
+    >
+  ) => {
     const newContact: ImportantContact = {
       ...contactData,
       id: `contact-${Date.now()}`,
     };
-    setContacts((prev) => [...prev, newContact]);
+
+    setContacts((prev) => [
+      ...prev,
+      newContact,
+    ]);
+
+    // FIX: contact add now syncs
+    syncSafely(
+      'Add contact',
+      () =>
+        supabaseService.syncContact(
+          newContact
+        )
+    );
   };
 
-  const updateContact = (updated: ImportantContact) => {
-    setContacts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  const updateContact = (
+    updated: ImportantContact
+  ) => {
+    setContacts((prev) =>
+      prev.map((c) =>
+        c.id === updated.id
+          ? updated
+          : c
+      )
+    );
+
+    // FIX: contact update now syncs
+    syncSafely(
+      'Update contact',
+      () =>
+        supabaseService.syncContact(
+          updated
+        )
+    );
   };
 
-  const deleteContact = (id: string) => {
-    setContacts((prev) => prev.filter((c) => c.id !== id));
+  const deleteContact = (
+    id: string
+  ) => {
+    setContacts((prev) =>
+      prev.filter(
+        (c) => c.id !== id
+      )
+    );
+
+    // FIX: contact delete now syncs
+    syncSafely(
+      'Delete contact',
+      () =>
+        supabaseService.deleteContact(
+          id
+        )
+    );
   };
 
-  // Call & Telephony actions
-  const simulateIncomingCall = (contactIdOrName?: string) => {
-    // Stop any existing call
+  // =====================================================
+  // CALLS
+  // =====================================================
+
+  const simulateIncomingCall = (
+    incomingIdentifier?: string
+  ) => {
     if (callRingTimerRef.current) {
-      clearInterval(callRingTimerRef.current);
+      clearInterval(
+        callRingTimerRef.current
+      );
     }
 
-    let caller = contacts.find((c) => c.id === contactIdOrName || c.name === contactIdOrName);
-    if (!caller) {
-      // Default to Papa for testing special rule
-      caller = contacts.find((c) => c.isSpecialRule) || contacts[0];
-    }
+    let callerName = 'Unknown Caller';
+    let incomingNumber = incomingIdentifier?.trim() || '';
+    let relation = 'Unknown';
+    let priority: string = 'Normal';
+    let isSpecial = false;
 
-    const isPapa = caller.name.toLowerCase().includes('papa') || !!caller.isSpecialRule;
+    if (!incomingIdentifier) {
+      // If nothing was passed, look for configured special contact or first contact
+      const defaultContact =
+        contacts.find((c) => c.isSpecialRule) || contacts[0];
+      if (defaultContact) {
+        callerName = defaultContact.name;
+        incomingNumber = defaultContact.phoneNumber;
+        relation = defaultContact.relation;
+        priority = defaultContact.priority;
+        isSpecial =
+          !!defaultContact.isSpecialRule ||
+          defaultContact.incomingAction === 'special_banner';
+      } else {
+        incomingNumber = 'Unknown';
+      }
+    } else {
+      // 1. DYNAMIC CONTACT IDENTIFICATION: Match by normalized phone number
+      let matched = findContactByPhone(contacts, incomingIdentifier);
+
+      // 2. If not matched by phone number, check by contact id or contact name
+      if (!matched) {
+        matched = contacts.find(
+          (c) =>
+            c.id === incomingIdentifier ||
+            c.name.toLowerCase() === incomingIdentifier.toLowerCase()
+        );
+      }
+
+      if (matched) {
+        // MATCH FOUND: Use contact's saved name, relation, and configured rules
+        callerName = matched.name;
+        incomingNumber = matched.phoneNumber;
+        relation = matched.relation;
+        priority = matched.priority;
+        isSpecial =
+          !!matched.isSpecialRule ||
+          matched.incomingAction === 'special_banner';
+      } else {
+        // NO MATCH FOUND: Treat caller as Unknown number.
+        // DO NOT assume the caller is Papa or any other contact.
+        callerName = 'Unknown Caller';
+        incomingNumber = incomingIdentifier;
+        relation = 'Unknown';
+        priority = 'Normal';
+        isSpecial = false;
+      }
+    }
 
     const newCall: ActiveCallState = {
       id: `call-live-${Date.now()}`,
-      contactName: caller.name,
-      phoneNumber: caller.phoneNumber,
-      relation: caller.relation,
-      isSpecialPapaRule: isPapa,
-      priority: caller.priority,
+      contactName: callerName,
+      phoneNumber: incomingNumber,
+      relation: relation,
+      isSpecialPapaRule: isSpecial,
+      priority: priority,
       status: 'ringing',
       secondsRinging: 0,
-      unansweredTimeout: settings.unansweredTimeoutSeconds || 20,
+      unansweredTimeout:
+        settings.unansweredTimeoutSeconds ||
+        20,
     };
 
     setActiveCall(newCall);
 
-    // Ring audio or notification
     addToast({
-      title: isPapa ? '❤️ Papa is calling' : `Incoming Call: ${caller.name}`,
-      message: `${caller.name} (${caller.phoneNumber}) is calling...`,
+      title: isSpecial
+        ? `❤️ ${callerName} is calling`
+        : `Incoming Call: ${callerName}`,
+      message: `${callerName} (${incomingNumber}) is calling...`,
       type: 'call',
     });
 
-    // Start 20-second timer countdown
-    callRingTimerRef.current = setInterval(() => {
-      setActiveCall((current) => {
-        if (!current || current.status !== 'ringing') return current;
+    callRingTimerRef.current =
+      setInterval(() => {
+        setActiveCall((current) => {
+          if (
+            !current ||
+            current.status !== 'ringing'
+          ) {
+            return current;
+          }
 
-        const nextSeconds = current.secondsRinging + 1;
+          const nextSeconds =
+            current.secondsRinging + 1;
 
-        // If reached unanswered timeout (default 20 seconds)
-        if (nextSeconds >= current.unansweredTimeout) {
-          clearInterval(callRingTimerRef.current);
+          if (
+            nextSeconds >=
+            current.unansweredTimeout
+          ) {
+            clearInterval(
+              callRingTimerRef.current
+            );
 
-          // If auto voice reply is supported
-          if (settings.autoVoiceReplyEnabled) {
-            // Trigger automatic voice reply
-            setTimeout(() => triggerVoiceAutoReply(), 100);
+            if (
+              settings.autoVoiceReplyEnabled
+            ) {
+              setTimeout(
+                () =>
+                  triggerVoiceAutoReply(),
+                100
+              );
+
+              return {
+                ...current,
+                secondsRinging:
+                  nextSeconds,
+                status:
+                  'connected_voice_reply',
+              };
+            }
+
+            handleMissedCallWithoutVoice(
+              current
+            );
+
             return {
               ...current,
-              secondsRinging: nextSeconds,
-              status: 'connected_voice_reply',
-            };
-          } else {
-            // Missed call without voice support
-            handleMissedCallWithoutVoice(current);
-            return {
-              ...current,
-              secondsRinging: nextSeconds,
+              secondsRinging:
+                nextSeconds,
               status: 'ended',
             };
           }
-        }
 
-        return { ...current, secondsRinging: nextSeconds };
-      });
-    }, 1000);
+          return {
+            ...current,
+            secondsRinging:
+              nextSeconds,
+          };
+        });
+      }, 1000);
   };
 
-  // Ritesh answers incoming call
   const answerIncomingCall = () => {
-    if (callRingTimerRef.current) clearInterval(callRingTimerRef.current);
+    if (callRingTimerRef.current) {
+      clearInterval(
+        callRingTimerRef.current
+      );
+    }
+
     if (!activeCall) return;
 
     const callRecord: CallRecord = {
       id: `rec-${Date.now()}`,
-      contactName: activeCall.contactName,
-      phoneNumber: activeCall.phoneNumber,
-      timestamp: new Date().toISOString(),
+      contactName:
+        activeCall.contactName,
+      phoneNumber:
+        activeCall.phoneNumber,
+      timestamp:
+        new Date().toISOString(),
       type: 'incoming',
       status: 'answered',
       durationSeconds: 15,
       notes: 'Answered by Ritesh.',
     };
 
-    setCallHistory((prev) => [callRecord, ...prev]);
+    setCallHistory((prev) => [
+      callRecord,
+      ...prev,
+    ]);
+
+    // FIX: answer call sync
+    syncSafely(
+      'Answer call',
+      () =>
+        supabaseService.syncCallRecord(
+          callRecord
+        )
+    );
+
     setActiveCall(null);
+
     addToast({
       title: 'Call Connected',
       message: `Call with ${activeCall.contactName} answered.`,
@@ -930,24 +1956,45 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  // Ritesh rejects incoming call
   const rejectIncomingCall = () => {
-    if (callRingTimerRef.current) clearInterval(callRingTimerRef.current);
+    if (callRingTimerRef.current) {
+      clearInterval(
+        callRingTimerRef.current
+      );
+    }
+
     if (!activeCall) return;
 
     const callRecord: CallRecord = {
       id: `rec-${Date.now()}`,
-      contactName: activeCall.contactName,
-      phoneNumber: activeCall.phoneNumber,
-      timestamp: new Date().toISOString(),
+      contactName:
+        activeCall.contactName,
+      phoneNumber:
+        activeCall.phoneNumber,
+      timestamp:
+        new Date().toISOString(),
       type: 'missed',
       status: 'missed',
       durationSeconds: 0,
       notes: 'Declined by Ritesh.',
     };
 
-    setCallHistory((prev) => [callRecord, ...prev]);
+    setCallHistory((prev) => [
+      callRecord,
+      ...prev,
+    ]);
+
+    // FIX: rejected call sync
+    syncSafely(
+      'Reject call',
+      () =>
+        supabaseService.syncCallRecord(
+          callRecord
+        )
+    );
+
     setActiveCall(null);
+
     addToast({
       title: 'Call Declined',
       message: `Call from ${activeCall.contactName} rejected.`,
@@ -955,115 +2002,184 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  // Forward incoming call
-  const forwardIncomingCall = async () => {
-    if (callRingTimerRef.current) clearInterval(callRingTimerRef.current);
-    if (!activeCall) return;
+  const forwardIncomingCall =
+    async () => {
+      if (callRingTimerRef.current) {
+        clearInterval(
+          callRingTimerRef.current
+        );
+      }
 
-    // Check contact forwarding number or default
-    const contact = contacts.find((c) => c.phoneNumber === activeCall.phoneNumber);
-    const targetNumber = contact?.forwardingNumber || settings.defaultForwardingNumber;
+      if (!activeCall) return;
 
-    // Call real verification endpoint
-    const result = await apiService.verifyCallForwarding(
-      activeCall.contactName,
-      targetNumber,
-      settings.telephonyConnected
-    );
-
-    if (result.success) {
-      const callRecord: CallRecord = {
-        id: `rec-${Date.now()}`,
-        contactName: activeCall.contactName,
-        phoneNumber: activeCall.phoneNumber,
-        timestamp: new Date().toISOString(),
-        type: 'incoming',
-        status: 'forwarded',
-        durationSeconds: 0,
-        notes: `Forwarded to ${targetNumber}.`,
-      };
-      setCallHistory((prev) => [callRecord, ...prev]);
-      setActiveCall(null);
-      addToast({
-        title: 'Call Forwarded',
-        message: result.message,
-        type: 'success',
-      });
-    } else {
-      // Truthful confirmation: Never claim forwarding succeeded if telephony not connected!
-      addToast({
-        title: 'Forwarding Failed',
-        message: result.message,
-        type: 'warning',
-      });
-      // Keep modal open with feedback
-      setActiveCall((prev) =>
-        prev ? { ...prev, forwardingStatus: result.message } : null
+      const contact = findContactByPhone(
+        contacts,
+        activeCall.phoneNumber
       );
-    }
-  };
 
-  // Trigger Lakshmi automated voice response: "Namaste, Ritesh abhi phone nahi utha pa rahe hain..."
+      const targetNumber =
+        contact?.forwardingNumber ||
+        settings.defaultForwardingNumber;
+
+      const result =
+        await apiService.verifyCallForwarding(
+          activeCall.contactName,
+          targetNumber,
+          settings.telephonyConnected
+        );
+
+      if (result.success) {
+        const callRecord: CallRecord = {
+          id: `rec-${Date.now()}`,
+          contactName:
+            activeCall.contactName,
+          phoneNumber:
+            activeCall.phoneNumber,
+          timestamp:
+            new Date().toISOString(),
+          type: 'incoming',
+          status: 'forwarded',
+          durationSeconds: 0,
+          notes: `Forwarded to ${targetNumber}.`,
+        };
+
+        setCallHistory((prev) => [
+          callRecord,
+          ...prev,
+        ]);
+
+        // FIX: forwarded call sync
+        syncSafely(
+          'Forward call',
+          () =>
+            supabaseService.syncCallRecord(
+              callRecord
+            )
+        );
+
+        setActiveCall(null);
+
+        addToast({
+          title: 'Call Forwarded',
+          message: result.message,
+          type: 'success',
+        });
+      } else {
+        addToast({
+          title: 'Forwarding Failed',
+          message: result.message,
+          type: 'warning',
+        });
+
+        setActiveCall((prev) =>
+          prev
+            ? {
+                ...prev,
+                forwardingStatus:
+                  result.message,
+              }
+            : null
+        );
+      }
+    };
+
   const triggerVoiceAutoReply = () => {
     if (!activeCall) return;
 
     const autoReplyText =
-      settings.languageMode === 'english'
+      settings.languageMode ===
+      'english'
         ? 'Hello, Ritesh is unable to answer the call right now. May I know what the call is regarding?'
         : 'Namaste, Ritesh abhi phone nahi utha pa rahe hain. Aap batayein, kya kaam hai?';
 
-    speakLakshmiText(autoReplyText);
+    speakLakshmiText(
+      autoReplyText
+    );
 
     setActiveCall((prev) =>
       prev
         ? {
             ...prev,
-            status: 'connected_voice_reply',
+            status:
+              'connected_voice_reply',
           }
         : null
     );
   };
 
-  // Caller speaks and message is captured
-  const submitCallerMessage = (messageText: string) => {
+  const submitCallerMessage = (
+    messageText: string
+  ) => {
     if (!activeCall) return;
 
-    const callerText = messageText.trim() || 'College work ke regarding call kiya tha.';
-    const callerName = activeCall.contactName;
+    const callerText =
+      messageText.trim() ||
+      'College work ke regarding call kiya tha.';
 
-    // Save Call Message
+    const callerName =
+      activeCall.contactName;
+
     const newMsg: CallMessage = {
       id: `call-msg-${Date.now()}`,
       callerName,
-      phoneNumber: activeCall.phoneNumber,
-      timestamp: new Date().toISOString(),
+      phoneNumber:
+        activeCall.phoneNumber,
+      timestamp:
+        new Date().toISOString(),
       message: callerText,
       status: 'new',
-      languageDetected: 'Hindi / Hinglish',
+      languageDetected:
+        'Hindi / Hinglish',
     };
-    setCallMessages((prev) => [newMsg, ...prev]);
-    supabaseService.syncCallMessage(newMsg);
 
-    // Save to Call History
+    setCallMessages((prev) => [
+      newMsg,
+      ...prev,
+    ]);
+
+    syncSafely(
+      'Caller message',
+      () =>
+        supabaseService.syncCallMessage(
+          newMsg
+        )
+    );
+
     const callRecord: CallRecord = {
       id: `rec-${Date.now()}`,
       contactName: callerName,
-      phoneNumber: activeCall.phoneNumber,
-      timestamp: new Date().toISOString(),
+      phoneNumber:
+        activeCall.phoneNumber,
+      timestamp:
+        new Date().toISOString(),
       type: 'missed',
       status: 'auto_answered',
       durationSeconds: 22,
-      messageReceived: callerText,
-      notes: 'Unanswered after 20s. Lakshmi took message.',
+      messageReceived:
+        callerText,
+      notes:
+        'Unanswered after 20s. Lakshmi took message.',
     };
-    setCallHistory((prev) => [callRecord, ...prev]);
-    supabaseService.syncCallRecord(callRecord);
 
-    // Lakshmi acknowledges
-    speakLakshmiText('Ji, main ye message Ritesh ko de dungi.');
+    setCallHistory((prev) => [
+      callRecord,
+      ...prev,
+    ]);
 
-    // Notify Ritesh
+    syncSafely(
+      'Auto answered call',
+      () =>
+        supabaseService.syncCallRecord(
+          callRecord
+        )
+    );
+
+    speakLakshmiText(
+      'Ji, main ye message Ritesh ko de dungi.'
+    );
+
     const notifyText = `${callerName} ka call aaya tha. Unhone kaha ki: "${callerText}"`;
+
     addToast({
       title: `${callerName} ka Message`,
       message: notifyText,
@@ -1078,86 +2194,276 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       },
     });
 
-    // Close active call modal after brief delay
     setTimeout(() => {
       setActiveCall(null);
     }, 2500);
   };
 
-  const handleMissedCallWithoutVoice = (call: ActiveCallState) => {
+  const handleMissedCallWithoutVoice = (
+    call: ActiveCallState
+  ) => {
     const callRecord: CallRecord = {
       id: `rec-${Date.now()}`,
-      contactName: call.contactName,
-      phoneNumber: call.phoneNumber,
-      timestamp: new Date().toISOString(),
+      contactName:
+        call.contactName,
+      phoneNumber:
+        call.phoneNumber,
+      timestamp:
+        new Date().toISOString(),
       type: 'missed',
       status: 'missed',
       durationSeconds: 0,
-      notes: 'Missed call (automatic voice reply was disabled).',
+      notes:
+        'Missed call (automatic voice reply was disabled).',
     };
-    setCallHistory((prev) => [callRecord, ...prev]);
+
+    setCallHistory((prev) => [
+      callRecord,
+      ...prev,
+    ]);
+
+    // FIX: automatic missed call sync
+    syncSafely(
+      'Missed call',
+      () =>
+        supabaseService.syncCallRecord(
+          callRecord
+        )
+    );
 
     addToast({
       title: `${call.contactName} ka call miss hua`,
-      message: `${call.contactName} tried calling at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+      message: `${call.contactName} tried calling at ${new Date().toLocaleTimeString(
+        [],
+        {
+          hour: '2-digit',
+          minute: '2-digit',
+        }
+      )}.`,
       type: 'warning',
     });
+
     setActiveCall(null);
   };
 
-  const markCallMessageStatus = (id: string, status: CallMessage['status']) => {
-    setCallMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
+  const markCallMessageStatus = (
+    id: string,
+    status: CallMessage['status']
+  ) => {
+    const existing =
+      callMessages.find(
+        (m) => m.id === id
+      );
+
+    if (!existing) return;
+
+    const updated = {
+      ...existing,
+      status,
+    };
+
+    setCallMessages((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? updated
+          : m
+      )
+    );
+
+    // FIX: call message status sync
+    syncSafely(
+      'Call message status',
+      () =>
+        supabaseService.syncCallMessage(
+          updated
+        )
+    );
   };
 
-  const deleteCallRecord = (id: string) => {
-    setCallHistory((prev) => prev.filter((c) => c.id !== id));
+  const deleteCallRecord = (
+    id: string
+  ) => {
+    setCallHistory((prev) =>
+      prev.filter(
+        (c) => c.id !== id
+      )
+    );
+
+    // FIX: call record delete sync
+    syncSafely(
+      'Delete call record',
+      () =>
+        supabaseService.deleteCallRecord(
+          id
+        )
+    );
   };
 
-  // Social actions
-  const createSocialDraft = (draftData: Omit<SocialDraft, 'id' | 'createdAt'>) => {
+  // =====================================================
+  // SOCIAL
+  // =====================================================
+
+  const createSocialDraft = (
+    draftData: Omit<
+      SocialDraft,
+      'id' | 'createdAt'
+    >
+  ) => {
     const newDraft: SocialDraft = {
       ...draftData,
       id: `draft-${Date.now()}`,
-      createdAt: new Date().toISOString(),
+      createdAt:
+        new Date().toISOString(),
     };
-    setSocialDrafts((prev) => [newDraft, ...prev]);
-    supabaseService.syncSocialDraft(newDraft);
+
+    setSocialDrafts((prev) => [
+      newDraft,
+      ...prev,
+    ]);
+
+    syncSafely(
+      'Create social draft',
+      () =>
+        supabaseService.syncSocialDraft(
+          newDraft
+        )
+    );
   };
 
-  const updateSocialDraft = (id: string, updates: Partial<SocialDraft>) => {
-    setSocialDrafts((prev) => prev.map((d) => (d.id === id ? { ...d, ...updates } : d)));
+  const updateSocialDraft = (
+    id: string,
+    updates: Partial<SocialDraft>
+  ) => {
+    const existing =
+      socialDrafts.find(
+        (d) => d.id === id
+      );
+
+    if (!existing) return;
+
+    const updated = {
+      ...existing,
+      ...updates,
+    };
+
+    setSocialDrafts((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? updated
+          : d
+      )
+    );
+
+    // FIX: social update sync
+    syncSafely(
+      'Update social draft',
+      () =>
+        supabaseService.syncSocialDraft(
+          updated
+        )
+    );
   };
 
-  const deleteSocialDraft = (id: string) => {
-    setSocialDrafts((prev) => prev.filter((d) => d.id !== id));
+  const deleteSocialDraft = (
+    id: string
+  ) => {
+    setSocialDrafts((prev) =>
+      prev.filter(
+        (d) => d.id !== id
+      )
+    );
+
+    // FIX: social delete sync
+    syncSafely(
+      'Delete social draft',
+      () =>
+        supabaseService.deleteSocialDraft(
+          id
+        )
+    );
   };
 
-  const publishSocialDraft = async (id: string): Promise<{ success: boolean; message: string }> => {
-    const draft = socialDrafts.find((d) => d.id === id);
-    if (!draft) return { success: false, message: 'Draft not found.' };
+  const publishSocialDraft =
+    async (
+      id: string
+    ): Promise<{
+      success: boolean;
+      message: string;
+    }> => {
+      const draft =
+        socialDrafts.find(
+          (d) => d.id === id
+        );
 
-    const platformConnected = settings.socialIntegrations[draft.platform]?.connected;
+      if (!draft) {
+        return {
+          success: false,
+          message:
+            'Draft not found.',
+        };
+      }
 
-    if (!platformConnected) {
-      return {
-        success: false,
-        message: `${draft.platform.toUpperCase()} is not connected yet. Please connect your account in Settings.`,
+      const platformConnected =
+        settings.socialIntegrations[
+          draft.platform
+        ]?.connected;
+
+      if (!platformConnected) {
+        return {
+          success: false,
+          message: `${draft.platform.toUpperCase()} is not connected yet. Please connect your account in Settings.`,
+        };
+      }
+
+      const updatedDraft: SocialDraft = {
+        ...draft,
+        status: 'published',
+        publishedAt:
+          new Date().toISOString(),
       };
-    }
 
-    // If connected:
-    updateSocialDraft(id, { status: 'published', publishedAt: new Date().toISOString() });
-    return {
-      success: true,
-      message: `Published successfully to ${draft.platform.toUpperCase()}!`,
+      setSocialDrafts((prev) =>
+        prev.map((d) =>
+          d.id === id
+            ? updatedDraft
+            : d
+        )
+      );
+
+      // FIX: published social draft sync
+      const syncResult =
+        await syncSafely(
+          'Publish social draft',
+          () =>
+            supabaseService.syncSocialDraft(
+              updatedDraft
+            )
+        );
+
+      if (syncResult === false) {
+        return {
+          success: false,
+          message:
+            'Post status updated locally, but Supabase sync failed.',
+        };
+      }
+
+      return {
+        success: true,
+        message: `Published successfully to ${draft.platform.toUpperCase()}!`,
+      };
     };
-  };
+
+  // =====================================================
+  // PROVIDER
+  // =====================================================
 
   return (
     <AssistantContext.Provider
       value={{
         activeTab,
         setActiveTab,
+
         settings,
         updateSettings,
 
@@ -1238,9 +2544,14 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 };
 
 export const useAssistant = () => {
-  const context = useContext(AssistantContext);
+  const context =
+    useContext(AssistantContext);
+
   if (!context) {
-    throw new Error('useAssistant must be used within an AssistantProvider');
+    throw new Error(
+      'useAssistant must be used within an AssistantProvider'
+    );
   }
+
   return context;
 };

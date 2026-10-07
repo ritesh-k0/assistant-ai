@@ -29,7 +29,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
     simulateIncomingCall,
     activeCall,
     requestNotificationPermission,
+    contacts,
   } = useAssistant();
+
+  const specialContact =
+    contacts.find((c) => c.isSpecialRule) ||
+    contacts.find((c) => c.name.toLowerCase().includes('papa'));
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showNotifications, setShowNotifications] = useState(false);
@@ -122,12 +127,18 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
           {/* Quick Papa incoming call simulator button */}
           {!activeCall && (
             <button
-              onClick={() => simulateIncomingCall('contact-papa')}
+              onClick={() =>
+                simulateIncomingCall(
+                  specialContact
+                    ? specialContact.phoneNumber || specialContact.id
+                    : undefined
+                )
+              }
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 transition shadow-sm active:scale-95"
-              title="Test incoming call flow for Papa (with 20s unanswered voice reply rule)"
+              title={`Test incoming call flow for ${specialContact?.name || 'important contact'} (with 20s unanswered voice reply rule)`}
             >
               <PhoneCall className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-              <span>Test Papa Call</span>
+              <span>{specialContact ? `Test ${specialContact.name} Call` : 'Test Call'}</span>
             </button>
           )}
 
