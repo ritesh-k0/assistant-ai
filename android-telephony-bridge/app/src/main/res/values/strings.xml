@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lakshmi Assistant</string>
+    <!-- Replace this URL with your deployed Netlify production app URL -->
+    <string name="app_url">https://ais-dev-htrklofk3wuxt5rcb3frym-955352691014.asia-southeast1.run.app</string>
+</resources>

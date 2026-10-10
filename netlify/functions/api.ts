@@ -95,16 +95,27 @@ const CORS_HEADERS = {
 async function handleApiRequest(
   pathname: string,
   method: string,
-  bodyText: string
+  bodyText: string,
+  queryParams: Record<string, string> = {}
 ): Promise<{ status: number; headers: Record<string, string>; body: any }> {
   // CORS Preflight
   if (method === 'OPTIONS') {
     return { status: 200, headers: CORS_HEADERS, body: { ok: true } };
   }
 
-  const cleanPath = pathname
+  let cleanPath = pathname
+    .split('?')[0]
     .replace(/^\/\.netlify\/functions\/api/, '')
     .replace(/^\/api/, '');
+
+  if ((!cleanPath || cleanPath === '/') && (queryParams.splat || queryParams.path)) {
+    cleanPath = '/' + (queryParams.splat || queryParams.path).replace(/^\/+/, '');
+  }
+
+  // Strip trailing slash except for root
+  if (cleanPath.length > 1 && cleanPath.endsWith('/')) {
+    cleanPath = cleanPath.slice(0, -1);
+  }
 
   let body: any = {};
   if (bodyText) {
@@ -113,6 +124,21 @@ async function handleApiRequest(
     } catch {
       body = {};
     }
+  }
+
+  // Root or Health check
+  if (!cleanPath || cleanPath === '/' || cleanPath === '/health' || cleanPath === '/status') {
+    return {
+      status: 200,
+      headers: CORS_HEADERS,
+      body: {
+        status: 'ok',
+        service: 'Lakshmi Personal AI Assistant API',
+        platform: 'Netlify Functions',
+        supabaseProject: DEFAULT_SUPABASE_PROJECT_ID,
+        timestamp: new Date().toISOString(),
+      },
+    };
   }
 
   // 1. CHAT ENDPOINT: /api/chat
@@ -461,7 +487,11 @@ export default async function (req: Request): Promise<Response> {
   if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
     bodyText = await req.text();
   }
-  const result = await handleApiRequest(url.pathname, method, bodyText);
+  const queryParams: Record<string, string> = {};
+  url.searchParams.forEach((val, key) => {
+    queryParams[key] = val;
+  });
+  const result = await handleApiRequest(url.pathname, method, bodyText, queryParams);
   return new Response(JSON.stringify(result.body), {
     status: result.status,
     headers: result.headers,
@@ -473,7 +503,8 @@ export const handler = async (event: any, context: any) => {
   const pathname = event.path || '';
   const method = event.httpMethod || 'GET';
   const bodyText = event.body || '';
-  const result = await handleApiRequest(pathname, method, bodyText);
+  const queryParams = (event.queryStringParameters || {}) as Record<string, string>;
+  const result = await handleApiRequest(pathname, method, bodyText, queryParams);
   return {
     statusCode: result.status,
     headers: result.headers,

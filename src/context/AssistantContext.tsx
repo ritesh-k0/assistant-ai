@@ -28,6 +28,7 @@ import { dbService } from '../services/db';
 import { apiService } from '../services/api';
 import { speechService } from '../services/speech';
 import { supabaseService } from '../services/supabaseService';
+import { androidCallBridge } from '../services/androidCallBridge';
 import {
   normalizePhoneNumber,
   arePhoneNumbersEqual,
@@ -597,6 +598,21 @@ export const AssistantProvider: React.FC<{
 
     hydrateAndSync();
 
+    // Android Native Incoming Call Bridge integration
+    const unsubAndroidCall = androidCallBridge.onIncomingCall((payload) => {
+      console.log('Incoming native SIM call received from bridge:', payload);
+      if (payload.state === 'RINGING' && payload.phoneNumber) {
+        simulateIncomingCall(payload.phoneNumber);
+      } else if (payload.state === 'IDLE') {
+        setActiveCall((current) => {
+          if (current && current.status === 'ringing') {
+            return null;
+          }
+          return current;
+        });
+      }
+    });
+
     const { data: authSub } =
       supabaseService.onAuthStateChange((event) => {
         if (event === 'SIGNED_IN') {
@@ -606,6 +622,7 @@ export const AssistantProvider: React.FC<{
 
     return () => {
       isMounted = false;
+      unsubAndroidCall();
       authSub?.subscription?.unsubscribe();
 
       if (callRingTimerRef.current) {
@@ -1919,6 +1936,9 @@ export const AssistantProvider: React.FC<{
 
     if (!activeCall) return;
 
+    // Trigger native Android answer if running in Android app
+    androidCallBridge.answerNativeCall();
+
     const callRecord: CallRecord = {
       id: `rec-${Date.now()}`,
       contactName:
@@ -1964,6 +1984,9 @@ export const AssistantProvider: React.FC<{
     }
 
     if (!activeCall) return;
+
+    // Trigger native Android end/reject if running in Android app
+    androidCallBridge.endNativeCall();
 
     const callRecord: CallRecord = {
       id: `rec-${Date.now()}`,
