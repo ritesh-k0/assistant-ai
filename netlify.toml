@@ -2,6 +2,17 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Proxy /api requests to Netlify serverless functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api"
+  status = 200
+
+# Client-side routing for SPA
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -9,3 +20,5 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  VITE_SUPABASE_URL = "https://fupgnszofujkaslbawgq.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "sb_publishable_1ADQDEdMzTFI27l1qjZ7Hw_vRCiUg2E"
